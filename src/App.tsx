@@ -4,6 +4,25 @@
  */
 
 import { useState, useEffect, FormEvent, MouseEvent, useRef, ChangeEvent } from 'react';
+import { db, auth, handleFirestoreError, OperationType } from './firebase';
+import { 
+  collection, 
+  doc, 
+  getDoc, 
+  getDocs, 
+  setDoc, 
+  deleteDoc, 
+  onSnapshot,
+  query,
+  orderBy
+} from 'firebase/firestore';
+import { 
+  signInWithPopup, 
+  GoogleAuthProvider, 
+  signOut, 
+  onAuthStateChanged,
+  User as FirebaseUser
+} from 'firebase/auth';
 import { 
   Scissors, 
   Shirt, 
@@ -148,25 +167,14 @@ export default function App() {
   const [liveSinglePrice, setLiveSinglePrice] = useState(0);
   const [discountPercent, setDiscountPercent] = useState(0);
 
-  // Database State - Offline/Local Inquiry persistence
+  // Database State - Offline/Local Inquiry persistence & auth State
   const [inquiries, setInquiries] = useState<Inquiry[]>([]);
   const [showInquiryPanel, setShowInquiryPanel] = useState(false);
   const [showSuccessToast, setShowSuccessToast] = useState(false);
   const [submittedInquiry, setSubmittedInquiry] = useState<Inquiry | null>(null);
+  const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
 
-  // Load database history on mount
-  useEffect(() => {
-    const cached = localStorage.getItem('rafi_konveksi_inquiries');
-    if (cached) {
-      try {
-        setInquiries(JSON.parse(cached));
-      } catch (e) {
-        console.error("Failed loading inquiries data", e);
-      }
-    }
-  }, []);
-
-  // Sync to database
+  // Sync to local storage
   const saveInquiriesToStorage = (updatedList: Inquiry[]) => {
     setInquiries(updatedList);
     localStorage.setItem('rafi_konveksi_inquiries', JSON.stringify(updatedList));
@@ -205,24 +213,113 @@ export default function App() {
   const [adminError, setAdminError] = useState('');
   const [activeAdminTab, setActiveAdminTab] = useState<'general' | 'catalog' | 'inquiries' | 'password'>('general');
 
-  // Helpers to update and persist
-  const saveBrandSettings = (updated: BrandSettings) => {
+  // Firebase Auth Observer & Real-time Auto login for administrative email
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setCurrentUser(user);
+      if (user && user.email === '2311111097@ittelkom-pwt.ac.id' && user.emailVerified) {
+        setIsAdminLoggedIn(true);
+      }
+    }, (error) => {
+      console.error("Auth state changed error:", error);
+    });
+    return unsubscribe;
+  }, []);
+
+  // Sync / Fetch brand and catalog configuration on mount
+  useEffect(() => {
+    const loadFirebaseData = async () => {
+      // 1. Brand settings from settings/brand
+      try {
+        const brandRef = doc(db, 'settings', 'brand');
+        const brandSnap = await getDoc(brandRef);
+        if (brandSnap.exists()) {
+          const remoteBrand = brandSnap.data() as BrandSettings;
+          setBrandSettings(prev => ({ ...prev, ...remoteBrand }));
+          localStorage.setItem('rafi_konveksi_brand', JSON.stringify(remoteBrand));
+        }
+      } catch (err) {
+        console.warn("Failed loading brand settings from cloud:", err);
+      }
+
+      // 2. Catalog products from catalog collection
+      try {
+        const querySnapshot = await getDocs(collection(db, 'catalog'));
+        if (!querySnapshot.empty) {
+          const list: CatalogProduct[] = [];
+          querySnapshot.forEach((docSnap) => {
+            list.push(docSnap.data() as CatalogProduct);
+          });
+          const order = ['jaket', 'polo', 'pdl', 'hoodie'];
+          list.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
+          setCatalogProducts(list);
+          localStorage.setItem('rafi_konveksi_catalog', JSON.stringify(list));
+        }
+      } catch (err) {
+        console.warn("Failed loading catalog products from cloud:", err);
+      }
+    };
+
+    loadFirebaseData();
+  }, []);
+
+  // Listen to inquiries in real-time if logged in as Firebase Admin
+  useEffect(() => {
+    const isFirebaseAdmin = currentUser && currentUser.email === '2311111097@ittelkom-pwt.ac.id' && currentUser.emailVerified;
+    if (isFirebaseAdmin) {
+      const q = query(collection(db, 'inquiries'), orderBy('date', 'desc'));
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        const list: Inquiry[] = [];
+        snapshot.forEach((pDoc) => {
+          list.push(pDoc.data() as Inquiry);
+        });
+        setInquiries(list);
+      }, (error) => {
+        console.error("Error watching inquiries in real-time:", error);
+        handleFirestoreError(error, OperationType.LIST, 'inquiries');
+      });
+      return unsubscribe;
+    } else {
+      // Otherwise, keep showing local customer inquiries from storage
+      const cached = localStorage.getItem('rafi_konveksi_inquiries');
+      if (cached) {
+        try {
+          setInquiries(JSON.parse(cached));
+        } catch (e) {
+          console.error("Failed loading inquiries data", e);
+        }
+      }
+    }
+  }, [currentUser]);
+
+  // Helpers to update and persist to local + firebase database
+  const saveBrandSettings = async (updated: BrandSettings) => {
     setBrandSettings(updated);
     try {
       localStorage.setItem('rafi_konveksi_brand', JSON.stringify(updated));
+      const isFirebaseAdmin = currentUser && currentUser.email === '2311111097@ittelkom-pwt.ac.id' && currentUser.emailVerified;
+      if (isFirebaseAdmin) {
+        await setDoc(doc(db, 'settings', 'brand'), updated);
+      }
     } catch (e) {
-      console.error("Quota exceeded limit on saving brand settings:", e);
-      alert('Penyimpanan browser (LocalStorage) penuh. Silakan reset beberapa foto atau gunakan gambar berukuran lebih kecil.');
+      console.error("Failed saving brand settings to Firestore:", e);
+      handleFirestoreError(e, OperationType.WRITE, 'settings/brand');
     }
   };
 
-  const saveCatalogProducts = (updated: CatalogProduct[]) => {
+  const saveCatalogProducts = async (updated: CatalogProduct[]) => {
     setCatalogProducts(updated);
     try {
       localStorage.setItem('rafi_konveksi_catalog', JSON.stringify(updated));
+      const isFirebaseAdmin = currentUser && currentUser.email === '2311111097@ittelkom-pwt.ac.id' && currentUser.emailVerified;
+      if (isFirebaseAdmin) {
+        for (const product of updated) {
+          await setDoc(doc(db, 'catalog', product.id), product);
+        }
+      }
     } catch (e) {
-      console.error("Quota exceeded limit on saving catalog settings:", e);
-      alert('Penyimpanan browser (LocalStorage) penuh. Silakan reset beberapa foto atau gunakan gambar berukuran lebih kecil.');
+      console.error("Failed saving catalog to Firestore:", e);
+      handleFirestoreError(e, OperationType.WRITE, 'catalog');
     }
   };
 
@@ -275,7 +372,7 @@ export default function App() {
   }, [calcProduct, calcMaterial, calcQuantity, calcCustomization]);
 
   // Form Submission
-  const handleCalculateAndSubmit = (e: FormEvent) => {
+  const handleCalculateAndSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!calcName.trim() || !calcPhone.trim()) {
       alert("Harap lengkapi nama dan nomor WhatsApp Anda agar kami bisa menghubungi.");
@@ -301,6 +398,14 @@ export default function App() {
     setShowSuccessToast(true);
     setIsQuoteModalOpen(false);
 
+    // Save to Firebase!
+    try {
+      await setDoc(doc(db, 'inquiries', newInquiry.id), newInquiry);
+    } catch (err) {
+      console.error("Failed to submit inquiry to Cloud Firestore:", err);
+      // Fail gracefully if offline
+    }
+
     // Reset Calculator details but keep profile info for convenience
     setCalcNotes('');
   };
@@ -325,12 +430,22 @@ Mohon informasi langkah pengerjaan selanjutnya. Terima kasih!`;
     return `https://wa.me/${cleanPhone}?text=${encodeURIComponent(text)}`;
   };
 
-  const deleteInquiry = (id: string, e: MouseEvent) => {
+  const deleteInquiry = async (id: string, e: MouseEvent) => {
     e.stopPropagation();
     const filtered = inquiries.filter(item => item.id !== id);
     saveInquiriesToStorage(filtered);
     if (submittedInquiry?.id === id) {
       setSubmittedInquiry(null);
+    }
+
+    const isFirebaseAdmin = currentUser && currentUser.email === '2311111097@ittelkom-pwt.ac.id' && currentUser.emailVerified;
+    if (isFirebaseAdmin) {
+      try {
+        await deleteDoc(doc(db, 'inquiries', id));
+      } catch (err) {
+        console.error("Failed to delete inquiry from Firestore:", err);
+        handleFirestoreError(err, OperationType.DELETE, `inquiries/${id}`);
+      }
     }
   };
 
@@ -1365,6 +1480,43 @@ Mohon informasi langkah pengerjaan selanjutnya. Terima kasih!`;
                   Masuk
                 </button>
               </div>
+              <div className="relative flex py-2 items-center">
+                <div className="flex-grow border-t border-slate-200"></div>
+                <span className="flex-shrink mx-3 text-slate-400 text-[10px] font-bold uppercase tracking-wider">Atau</span>
+                <div className="flex-grow border-t border-slate-200"></div>
+              </div>
+
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    const provider = new GoogleAuthProvider();
+                    const result = await signInWithPopup(auth, provider);
+                    const user = result.user;
+                    if (user && user.email === '2311111097@ittelkom-pwt.ac.id' && user.emailVerified) {
+                      setIsAdminLoggedIn(true);
+                      setIsAdminLoginModalOpen(false);
+                      setIsAdminDashboardOpen(true);
+                      setAdminError('');
+                    } else {
+                      await signOut(auth);
+                      setAdminError('Email Anda (' + (user?.email || 'tidak dikenal') + ') tidak terdaftar sebagai administrator.');
+                    }
+                  } catch (e: any) {
+                    console.error('Failed to login with Google:', e);
+                    setAdminError('Gagal login via Google: ' + (e.message || 'unknown error'));
+                  }
+                }}
+                className="w-full bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold uppercase tracking-wider py-3.5 rounded-xl transition-all shadow-sm flex items-center justify-center space-x-2"
+              >
+                <svg className="w-4 h-4" viewBox="0 0 24 24" width="16" height="16">
+                  <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                  <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                  <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
+                  <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
+                </svg>
+                <span>Masuk dengan Google (Admin)</span>
+              </button>
             </div>
             <div className="text-center pt-2">
               <span className="text-[10px] text-slate-400 font-mono">Password Bawaan: <span className="font-bold underline">admin123</span></span>
@@ -1389,6 +1541,12 @@ Mohon informasi langkah pengerjaan selanjutnya. Terima kasih!`;
                   Pengaturan {brandSettings.name}
                 </h3>
                 <p className="text-xs text-slate-500 font-medium">Ubah logo brand, foto display katalog, tulisan deskripsi, dan lihat riwayat pelanggan.</p>
+                {currentUser && (
+                  <div className="flex items-center space-x-1.5 mt-2 bg-sky-50 text-sky-700 px-3 py-1.5 rounded-lg border border-sky-100 max-w-fit">
+                    <div className="w-1.5 h-1.5 bg-[#0ea5e9] rounded-full animate-pulse" />
+                    <span className="text-[10px] font-semibold font-mono">Google Terhubung: {currentUser.email}</span>
+                  </div>
+                )}
               </div>
               
               <div className="flex gap-2 w-full sm:w-auto self-stretch sm:self-center">
@@ -1401,9 +1559,14 @@ Mohon informasi langkah pengerjaan selanjutnya. Terima kasih!`;
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
+                  onClick={async () => {
                     setIsAdminLoggedIn(false);
                     setIsAdminDashboardOpen(false);
+                    try {
+                      await signOut(auth);
+                    } catch (e) {
+                      console.error("Failed to sign out from Firebase Auth:", e);
+                    }
                   }}
                   className="w-1/2 sm:w-auto bg-rose-500 hover:bg-rose-650 text-white text-xs font-bold uppercase tracking-wider px-5 py-3 rounded-xl transition-all shadow-md shadow-rose-100 flex items-center justify-center space-x-1"
                 >
@@ -1709,9 +1872,21 @@ Mohon informasi langkah pengerjaan selanjutnya. Terima kasih!`;
                   <p className="text-xs text-slate-400 font-medium">Berikut adalah daftar penawaran harga yang disimpan secara lokal oleh pelanggan.</p>
                   {inquiries.length > 0 && (
                     <button
-                      onClick={() => {
+                      onClick={async () => {
                         if (confirm('Apakah Anda yakin ingin menghapus seluruh riwayat pelanggan?')) {
+                          const originalInquiries = [...inquiries];
                           saveInquiriesToStorage([]);
+                          const isFirebaseAdmin = currentUser && currentUser.email === '2311111097@ittelkom-pwt.ac.id' && currentUser.emailVerified;
+                          if (isFirebaseAdmin) {
+                            try {
+                              for (const inq of originalInquiries) {
+                                await deleteDoc(doc(db, 'inquiries', inq.id));
+                              }
+                            } catch (e) {
+                              console.error("Failed to delete all target documents from cloud firestore", e);
+                              handleFirestoreError(e, OperationType.DELETE, 'inquiries');
+                            }
+                          }
                         }
                       }}
                       className="text-xs text-rose-500 font-bold hover:underline"

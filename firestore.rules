@@ -1,0 +1,102 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Global default deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Standard UUID / Slug Validator
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+    
+    function incoming() {
+      return request.resource.data;
+    }
+    
+    function existing() {
+      return resource.data;
+    }
+    
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isAdmin() {
+      return isSignedIn() && 
+             request.auth.token.email == '2311111097@ittelkom-pwt.ac.id' && 
+             request.auth.token.email_verified == true;
+    }
+
+    // Entity validator: BrandSettings
+    function isValidBrandSettings(data) {
+      return data.keys().hasAll(['name', 'tagline', 'aboutTitle', 'aboutText1', 'aboutText2', 'adminPasswordHash', 'whatsappNumber', 'heroImage', 'logoImage']) &&
+             data.keys().size() <= 12 &&
+             data.name is string && data.name.size() <= 100 &&
+             data.tagline is string && data.tagline.size() <= 200 &&
+             data.aboutTitle is string && data.aboutTitle.size() <= 200 &&
+             data.aboutText1 is string && data.aboutText1.size() <= 2000 &&
+             data.aboutText2 is string && data.aboutText2.size() <= 2000 &&
+             data.adminPasswordHash is string && data.adminPasswordHash.size() <= 100 &&
+             data.whatsappNumber is string && data.whatsappNumber.size() <= 50 &&
+             data.heroImage is string && data.heroImage.size() <= 1100000 &&
+             data.logoImage is string && data.logoImage.size() <= 500000;
+    }
+
+    // Entity validator: CatalogProduct
+    function isValidCatalogProduct(data) {
+      return data.keys().hasAll(['id', 'title', 'subtitle', 'description', 'image', 'basePrice']) &&
+             data.keys().size() == 6 &&
+             data.id is string && isValidId(data.id) &&
+             data.title is string && data.title.size() <= 100 &&
+             data.subtitle is string && data.subtitle.size() <= 200 &&
+             data.description is string && data.description.size() <= 1000 &&
+             data.image is string && data.image.size() <= 1100000 &&
+             data.basePrice is int && data.basePrice >= 0 && data.basePrice <= 100000000;
+    }
+
+    // Entity validator: Inquiry
+    function isValidInquiry(data) {
+      return data.keys().hasAll(['id', 'productType', 'material', 'quantity', 'customization', 'clientName', 'clientPhone', 'clientNotes', 'totalPrice', 'date']) &&
+             data.keys().size() == 10 &&
+             data.id is string && isValidId(data.id) &&
+             data.productType is string && data.productType.size() <= 100 &&
+             data.material is string && data.material.size() <= 100 &&
+             data.quantity is int && data.quantity > 0 && data.quantity <= 1000000 &&
+             data.customization is string && data.customization.size() <= 200 &&
+             data.clientName is string && data.clientName.size() <= 200 &&
+             data.clientPhone is string && data.clientPhone.size() <= 50 &&
+             data.clientNotes is string && data.clientNotes.size() <= 2000 &&
+             data.totalPrice is int && data.totalPrice >= 0 && data.totalPrice <= 1000000000 &&
+             data.date is string && data.date.size() <= 50;
+    }
+
+    // Match rules for BrandSettings
+    match /settings/{settingsId} {
+      allow get: if isValidId(settingsId);
+      allow create: if isValidBrandSettings(incoming()) && isValidId(settingsId) && isAdmin();
+      allow update: if isValidBrandSettings(incoming()) && isValidId(settingsId) && isAdmin();
+      allow delete: if isValidId(settingsId) && isAdmin();
+    }
+
+    // Match rules for CatalogProducts
+    match /catalog/{productId} {
+      allow get: if isValidId(productId);
+      allow list: if true;
+      allow create: if isValidCatalogProduct(incoming()) && isValidId(productId) && isAdmin();
+      allow update: if isValidCatalogProduct(incoming()) && isValidId(productId) && isAdmin();
+      allow delete: if isValidId(productId) && isAdmin();
+    }
+
+    // Match rules for Inquiries
+    match /inquiries/{inquiryId} {
+      allow get: if isValidId(inquiryId) && isAdmin();
+      allow list: if isAdmin();
+      allow create: if isValidInquiry(incoming()) && isValidId(inquiryId);
+      allow update: if isValidInquiry(incoming()) && isValidId(inquiryId) && isAdmin();
+      allow delete: if isValidId(inquiryId) && isAdmin();
+    }
+  }
+}

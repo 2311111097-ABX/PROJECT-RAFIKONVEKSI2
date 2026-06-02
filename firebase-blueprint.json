@@ -1,0 +1,67 @@
+{
+  "entities": {
+    "BrandSettings": {
+      "title": "BrandSettings",
+      "description": "Customizable content and credentials of the tailor brand.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Name of the tailor brand" },
+        "tagline": { "type": "string", "description": "Tagline on the navigation header" },
+        "heroImage": { "type": "string", "description": "Banner JPEG base64 or URL" },
+        "logoImage": { "type": "string", "description": "Business logo image or empty string for default icon" },
+        "aboutTitle": { "type": "string", "description": "Header title of the About section" },
+        "aboutText1": { "type": "string", "description": "First paragraph describing the business history" },
+        "aboutText2": { "type": "string", "description": "Second paragraph detailing quality policy" },
+        "adminPasswordHash": { "type": "string", "description": "Sha/cleartext for admin credentials verification" },
+        "whatsappNumber": { "type": "string", "description": "Target destination phone number for Whatsapp orders" }
+      },
+      "required": ["name", "tagline", "heroImage", "logoImage", "aboutTitle", "aboutText1", "aboutText2", "adminPasswordHash", "whatsappNumber"]
+    },
+    "CatalogProduct": {
+      "title": "CatalogProduct",
+      "description": "A single customizable inventory item shown on the homepage bento grid.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Shorthand identifier also used as the Firestore doc ID" },
+        "title": { "type": "string", "description": "Display name of the clothing item" },
+        "subtitle": { "type": "string", "description": "Short subtitle overview" },
+        "description": { "type": "string", "description": "General description text" },
+        "image": { "type": "string", "description": "Product illustration base64" },
+        "basePrice": { "type": "integer", "description": "Initial per-piece production base cost" }
+      },
+      "required": ["id", "title", "subtitle", "description", "image", "basePrice"]
+    },
+    "Inquiry": {
+      "title": "Inquiry",
+      "description": "An order inquiry logged from clients or potential customers.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique quotation inquiry ID value" },
+        "productType": { "type": "string", "description": "Type of product configured" },
+        "material": { "type": "string", "description": "Material selected" },
+        "quantity": { "type": "integer", "description": "Total items to fabricate" },
+        "customization": { "type": "string", "description": "Logo printing style request details" },
+        "clientName": { "type": "string", "description": "Sender client display name" },
+        "clientPhone": { "type": "string", "description": "WhatsApp contact number" },
+        "clientNotes": { "type": "string", "description": "Aesthetic or fitting adjustments or instructions" },
+        "totalPrice": { "type": "integer", "description": "Calculated wholesale aggregate net price estimation" },
+        "date": { "type": "string", "description": "Strict date string timestamp of submission" }
+      },
+      "required": ["id", "productType", "material", "quantity", "customization", "clientName", "clientPhone", "clientNotes", "totalPrice", "date"]
+    }
+  },
+  "firestore": {
+    "/settings/{settingsId}": {
+      "schema": "BrandSettings",
+      "description": "Global customization variables like brand details"
+    },
+    "/catalog/{productId}": {
+      "schema": "CatalogProduct",
+      "description": "Individual customizable products for purchase"
+    },
+    "/inquiries/{inquiryId}": {
+      "schema": "Inquiry",
+      "description": "Client wholesale quote orders"
+    }
+  }
+}
