@@ -1,0 +1,6 @@
+{
+  "name": "Rafi Konveksi",
+  "description": "Website resmi Rafi Konveksi - Presisi dalam Setiap Jahitan. Spesialis pembuatan jaket, kaos polo, kemeja PDL, serta hoodie berkualitas tinggi.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
