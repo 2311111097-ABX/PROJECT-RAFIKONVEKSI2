@@ -208,12 +208,22 @@ export default function App() {
   // Helpers to update and persist
   const saveBrandSettings = (updated: BrandSettings) => {
     setBrandSettings(updated);
-    localStorage.setItem('rafi_konveksi_brand', JSON.stringify(updated));
+    try {
+      localStorage.setItem('rafi_konveksi_brand', JSON.stringify(updated));
+    } catch (e) {
+      console.error("Quota exceeded limit on saving brand settings:", e);
+      alert('Penyimpanan browser (LocalStorage) penuh. Silakan reset beberapa foto atau gunakan gambar berukuran lebih kecil.');
+    }
   };
 
   const saveCatalogProducts = (updated: CatalogProduct[]) => {
     setCatalogProducts(updated);
-    localStorage.setItem('rafi_konveksi_catalog', JSON.stringify(updated));
+    try {
+      localStorage.setItem('rafi_konveksi_catalog', JSON.stringify(updated));
+    } catch (e) {
+      console.error("Quota exceeded limit on saving catalog settings:", e);
+      alert('Penyimpanan browser (LocalStorage) penuh. Silakan reset beberapa foto atau gunakan gambar berukuran lebih kecil.');
+    }
   };
 
   // Pricing Model constants computed dynamically from custom catalog configuration
@@ -344,17 +354,73 @@ Mohon informasi langkah pengerjaan selanjutnya. Terima kasih!`;
         alert('File harus berupa gambar (PNG/JPG/WEBP)');
         return;
       }
-      if (file.size > 2.5 * 1024 * 1024) {
-        alert('Ukuran gambar terlalu besar. Gunakan gambar berukuran di bawah 2.5MB.');
+      // Increased from 2.5MB to 10MB because we compress it anyway!
+      if (file.size > 10 * 1024 * 1024) {
+        alert('Ukuran gambar terlalu besar. Silakan gunakan berkas gambar di bawah 10MB.');
         return;
       }
+      
       const reader = new FileReader();
       reader.onload = (event) => {
         if (event.target?.result) {
-          callback(event.target.result as string);
+          const rawBase64 = event.target.result as string;
+          try {
+            const img = new Image();
+            img.onload = () => {
+              try {
+                // Setup canvas
+                const canvas = document.createElement('canvas');
+                let width = img.width;
+                let height = img.height;
+                
+                // Constrain maximum dimensions to 800px for supreme load speeds and minimal storage consumption
+                const MAX_DIM = 800;
+                if (width > MAX_DIM || height > MAX_DIM) {
+                  if (width > height) {
+                    height = Math.round((height * MAX_DIM) / width);
+                    width = MAX_DIM;
+                  } else {
+                    width = Math.round((width * MAX_DIM) / height);
+                    height = MAX_DIM;
+                  }
+                }
+                
+                canvas.width = width;
+                canvas.height = height;
+                
+                const ctx = canvas.getContext('2d');
+                if (ctx) {
+                  ctx.drawImage(img, 0, 0, width, height);
+                  // Convert to highly optimized JPEG with 0.75 ratio compression
+                  const compressedBase64 = canvas.toDataURL('image/jpeg', 0.75);
+                  callback(compressedBase64);
+                } else {
+                  callback(rawBase64);
+                }
+              } catch (canvasErr) {
+                console.warn("Canvas compression failed, falling back to raw Base64:", canvasErr);
+                callback(rawBase64);
+              }
+            };
+            img.onerror = (imgErr) => {
+              console.warn("Image loading failed, falling back to raw Base64:", imgErr);
+              callback(rawBase64);
+            };
+            img.src = rawBase64;
+          } catch (setupErr) {
+            console.warn("Setup image failed, falling back to raw Base64:", setupErr);
+            callback(rawBase64);
+          }
         }
       };
+      reader.onerror = (readerErr) => {
+        console.error("FileReader failed:", readerErr);
+        alert('Gagal membaca file gambar.');
+      };
       reader.readAsDataURL(file);
+      
+      // Reset input value so the same file selection can be triggered again correctly
+      e.target.value = '';
     }
   };
 
@@ -668,24 +734,33 @@ Mohon informasi langkah pengerjaan selanjutnya. Terima kasih!`;
                   )}
                 </h2>
                 
-                {/* Sewing Machine vector illustration matching the image */}
-                <div className="w-24 h-24 text-[#0ea5e9] shrink-0">
-                  <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full h-full">
-                    {/* Machine base */}
-                    <path d="M10 75H90V80C90 82.2091 88.2091 84 86 84H14C11.7909 84 10 82.2091 10 80V75Z" fill="#E0F2FE" stroke="#0ea5e9" strokeWidth="4" />
-                    {/* Upper arm and body */}
-                    <path d="M22 75V35C22 28 28 22 35 22H72V35C72 40 68 45 62 45H52V75" stroke="#0ea5e9" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
-                    {/* Balance Wheel */}
-                    <circle cx="72" cy="35" r="8" fill="white" stroke="#0ea5e9" strokeWidth="4" />
-                    {/* Needle bar */}
-                    <path d="M38 45V68" stroke="#0ea5e9" strokeWidth="3" strokeLinecap="round" />
-                    {/* Thread spool pin */}
-                    <path d="M55 22V14" stroke="#0ea5e9" strokeWidth="3" />
-                    <rect x="50" y="8" width="10" height="6" rx="2" fill="#10B981" />
-                    {/* Sprout Botanical Leaf growing */}
-                    <path d="M55 14C55 14 62 10 65 14C65 14 66 20 60 20Z" fill="#10B981" opacity="0.8" />
-                    <path d="M55 14C55 14 50 8 46 11C46 11 44 18 50 19Z" fill="#10B981" opacity="0.8" />
-                  </svg>
+                {/* Sewing Machine vector illustration or uploaded logo image */}
+                <div className="w-24 h-24 shrink-0 flex items-center justify-center">
+                  {brandSettings.logoImage ? (
+                    <img 
+                      src={brandSettings.logoImage} 
+                      className="max-w-full max-h-full object-contain rounded-2xl shadow-md border border-slate-100" 
+                      alt="Logo Brand" 
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : (
+                    <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full h-full text-[#0ea5e9]">
+                      {/* Machine base */}
+                      <path d="M10 75H90V80C90 82.2091 88.2091 84 86 84H14C11.7909 84 10 82.2091 10 80V75Z" fill="#E0F2FE" stroke="#0ea5e9" strokeWidth="4" />
+                      {/* Upper arm and body */}
+                      <path d="M22 75V35C22 28 28 22 35 22H72V35C72 40 68 45 62 45H52V75" stroke="#0ea5e9" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
+                      {/* Balance Wheel */}
+                      <circle cx="72" cy="35" r="8" fill="white" stroke="#0ea5e9" strokeWidth="4" />
+                      {/* Needle bar */}
+                      <path d="M38 45V68" stroke="#0ea5e9" strokeWidth="3" strokeLinecap="round" />
+                      {/* Thread spool pin */}
+                      <path d="M55 22V14" stroke="#0ea5e9" strokeWidth="3" />
+                      <rect x="50" y="8" width="10" height="6" rx="2" fill="#10B981" />
+                      {/* Sprout Botanical Leaf growing */}
+                      <path d="M55 14C55 14 62 10 65 14C65 14 66 20 60 20Z" fill="#10B981" opacity="0.8" />
+                      <path d="M55 14C55 14 50 8 46 11C46 11 44 18 50 19Z" fill="#10B981" opacity="0.8" />
+                    </svg>
+                  )}
                 </div>
               </div>
             </div>
@@ -716,7 +791,7 @@ Mohon informasi langkah pengerjaan selanjutnya. Terima kasih!`;
       </section>
 
       {/* 4. CATALOG BENTO GRID exactly matching asymmetrical layout */}
-      <section id="catalog" className="py-20 bg-white">
+      <section id="catalog" className="py-20 bg-slate-50/50 border-y border-slate-100">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           
           <div className="mb-12 text-center md:text-left">
@@ -730,9 +805,9 @@ Mohon informasi langkah pengerjaan selanjutnya. Terima kasih!`;
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch">
             
             {/* COMPONENT 1: JAKET & OUTER (Left Side - Big Column Span 5) */}
-            <div className="lg:col-span-5 bg-stone-50 hover:bg-[#FAF9F6]/90 border border-slate-200/60 rounded-3xl p-8 flex flex-col justify-between transition-all duration-300 hover:shadow-xl group relative overflow-hidden">
+            <div className="lg:col-span-5 bg-white hover:bg-slate-50 border border-slate-200/70 rounded-3xl p-8 flex flex-col justify-between transition-all duration-300 hover:shadow-xl group relative overflow-hidden shadow-sm">
               <div className="space-y-4">
-                <span className="text-[10px] uppercase font-black text-slate-400 tracking-widest block">
+                <span className="text-[10px] uppercase font-black text-[#0ea5e9] tracking-widest block">
                   {catalogProducts[0]?.subtitle || 'PREMIUM SERIES'}
                 </span>
                 <h3 className="text-3xl font-black text-slate-900 tracking-tight leading-none uppercase">
@@ -752,13 +827,13 @@ Mohon informasi langkah pengerjaan selanjutnya. Terima kasih!`;
                 </div>
               </div>
 
-              {/* Overlapping Product Image at the bottom */}
-              <div className="mt-8 flex justify-center items-end relative h-64 overflow-hidden pt-4">
+              {/* Unique Auto-adaptive Showcase Frame for Vertical, Horizontal, or 1:1 Images */}
+              <div className="mt-6 flex-1 w-full min-h-[300px] bg-slate-50 border border-slate-100 rounded-2xl flex items-center justify-center p-4 relative overflow-hidden">
                 <img 
                   src={catalogProducts[0]?.image || "/src/assets/images/jacket_outer_flat_1780410123271.png"} 
                   alt={catalogProducts[0]?.title || "Jaket & Outer"} 
                   referrerPolicy="no-referrer"
-                  className="object-contain max-h-full w-auto drop-shadow-lg transition-transform duration-500 group-hover:scale-105"
+                  className="object-contain max-h-full max-w-full drop-shadow-md transition-transform duration-500 group-hover:scale-105"
                   id="img-catalog-jacket"
                 />
               </div>
@@ -771,10 +846,10 @@ Mohon informasi langkah pengerjaan selanjutnya. Terima kasih!`;
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-8">
                 
                 {/* COMPONENT 2: KAOS POLO */}
-                <div className="bg-stone-50 hover:bg-[#FAF9F6]/90 border border-slate-200/60 rounded-3xl p-6 flex flex-col justify-between transition-all duration-300 hover:shadow-lg group">
+                <div className="bg-white hover:bg-slate-50 border border-slate-200/70 rounded-3xl p-6 flex flex-col justify-between transition-all duration-300 hover:shadow-lg group shadow-sm">
                   <div className="space-y-2">
                     <h4 className="text-xl font-extrabold text-slate-950 uppercase">{catalogProducts[1]?.title || 'Kaos Polo'}</h4>
-                    <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">
+                    <p className="text-xs text-[#0ea5e9] font-bold uppercase tracking-widest">
                       {catalogProducts[1]?.subtitle || 'Combed Cotton 30s & 24s.'}
                     </p>
                     <p className="text-xs text-slate-500 mt-1 line-clamp-2 leading-relaxed">
@@ -789,22 +864,22 @@ Mohon informasi langkah pengerjaan selanjutnya. Terima kasih!`;
                       </button>
                     </div>
                   </div>
-                  <div className="mt-6 h-44 flex items-center justify-center p-2">
+                  <div className="mt-5 w-full h-48 bg-slate-50 border border-slate-100 rounded-2xl flex items-center justify-center p-3 relative overflow-hidden shrink-0">
                     <img 
                       src={catalogProducts[1]?.image || "/src/assets/images/polo_shirts_flat_1780410139619.png"} 
                       alt={catalogProducts[1]?.title || "Kaos Polo"} 
                       referrerPolicy="no-referrer"
-                      className="object-contain max-h-full w-auto drop-shadow-md transition-transform duration-500 group-hover:scale-105"
+                      className="object-contain max-h-full max-w-full drop-shadow-sm transition-transform duration-500 group-hover:scale-105"
                       id="img-catalog-polo"
                     />
                   </div>
                 </div>
 
                 {/* COMPONENT 3: KEMEJA PDL */}
-                <div className="bg-stone-50 hover:bg-[#FAF9F6]/90 border border-slate-200/60 rounded-3xl p-6 flex flex-col justify-between transition-all duration-300 hover:shadow-lg group">
+                <div className="bg-white hover:bg-slate-50 border border-slate-200/70 rounded-3xl p-6 flex flex-col justify-between transition-all duration-300 hover:shadow-lg group shadow-sm">
                   <div className="space-y-2">
                     <h4 className="text-xl font-extrabold text-slate-950 uppercase">{catalogProducts[2]?.title || 'Kemeja PDL'}</h4>
-                    <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">
+                    <p className="text-xs text-[#0ea5e9] font-bold uppercase tracking-widest">
                       {catalogProducts[2]?.subtitle || 'American Drill & Ripstop.'}
                     </p>
                     <p className="text-xs text-slate-500 mt-1 line-clamp-2 leading-relaxed">
@@ -819,12 +894,12 @@ Mohon informasi langkah pengerjaan selanjutnya. Terima kasih!`;
                       </button>
                     </div>
                   </div>
-                  <div className="mt-6 h-44 flex items-center justify-center p-2">
+                  <div className="mt-5 w-full h-48 bg-slate-50 border border-slate-100 rounded-2xl flex items-center justify-center p-3 relative overflow-hidden shrink-0">
                     <img 
                       src={catalogProducts[2]?.image || "/src/assets/images/pdl_shirt_flat_1780410153691.png"} 
                       alt={catalogProducts[2]?.title || "Kemeja PDL"} 
                       referrerPolicy="no-referrer"
-                      className="object-contain max-h-full w-auto drop-shadow-md transition-transform duration-500 group-hover:scale-105"
+                      className="object-contain max-h-full max-w-full drop-shadow-sm transition-transform duration-500 group-hover:scale-105"
                       id="img-catalog-pdl"
                     />
                   </div>
@@ -833,7 +908,7 @@ Mohon informasi langkah pengerjaan selanjutnya. Terima kasih!`;
               </div>
 
               {/* BOTTOM HALF: Wide Card for Hoodie & Sweatshirt */}
-              <div className="bg-stone-50 hover:bg-[#FAF9F6]/90 border border-slate-200/60 rounded-3xl p-8 grid grid-cols-1 sm:grid-cols-2 gap-6 items-center transition-all duration-300 hover:shadow-xl group">
+              <div className="bg-white hover:bg-slate-50 border border-slate-200/70 rounded-3xl p-8 grid grid-cols-1 sm:grid-cols-2 gap-6 items-center transition-all duration-300 hover:shadow-xl group shadow-sm">
                 <div className="space-y-4">
                   <h4 className="text-3xl font-black text-slate-950 tracking-tight leading-none uppercase">
                     {catalogProducts[3]?.title.split('&').map((text, idx) => (
@@ -856,12 +931,12 @@ Mohon informasi langkah pengerjaan selanjutnya. Terima kasih!`;
                     </button>
                   </div>
                 </div>
-                <div className="h-48 md:h-56 flex items-center justify-center p-2 relative">
+                <div className="w-full h-48 md:h-56 bg-slate-50 border border-slate-100 rounded-2xl flex items-center justify-center p-4 relative overflow-hidden">
                   <img 
                     src={catalogProducts[3]?.image || "/src/assets/images/hoodie_beige_flat_1780410167519.png"} 
                     alt={catalogProducts[3]?.title || "Hoodie & Sweatshirt"} 
                     referrerPolicy="no-referrer"
-                    className="object-contain max-h-full w-auto drop-shadow-md transition-all duration-500 group-hover:scale-[1.04]"
+                    className="object-contain max-h-full max-w-full drop-shadow-sm transition-all duration-500 group-hover:scale-[1.04]"
                     id="img-catalog-hoodie"
                   />
                 </div>
@@ -1476,7 +1551,7 @@ Mohon informasi langkah pengerjaan selanjutnya. Terima kasih!`;
                           )}
                         </div>
                         <div className="flex flex-col space-y-1.5 flex-1 select-none">
-                          <label className="text-[10px] font-black uppercase text-[#0ea5e9] tracking-wider cursor-pointer bg-white px-3 py-2 border border-slate-200 rounded-lg text-center hover:bg-slate-50 block">💡 PILIH FILE LOGO</label>
+                          <label htmlFor="logo-image-upload-input" className="text-[10px] font-black uppercase text-[#0ea5e9] tracking-wider cursor-pointer bg-white px-3 py-2 border border-slate-200 rounded-lg text-center hover:bg-slate-50 block">💡 PILIH FILE LOGO</label>
                           <input
                             type="file"
                             accept="image/*"
@@ -1506,7 +1581,7 @@ Mohon informasi langkah pengerjaan selanjutnya. Terima kasih!`;
                           <img src={brandSettings.heroImage} className="w-full h-full object-cover" alt="Hero preview" referrerPolicy="no-referrer" />
                         </div>
                         <div className="flex flex-col space-y-1.5 select-none">
-                          <label className="text-[10px] font-black uppercase text-[#0ea5e9] tracking-wider cursor-pointer bg-white px-3 py-2 border border-slate-200 rounded-lg text-center hover:bg-slate-50 block">🖼️ UNGGAH BANNER BARU</label>
+                          <label htmlFor="hero-image-upload-input" className="text-[10px] font-black uppercase text-[#0ea5e9] tracking-wider cursor-pointer bg-white px-3 py-2 border border-slate-200 rounded-lg text-center hover:bg-slate-50 block">🖼️ UNGGAH BANNER BARU</label>
                           <input
                             type="file"
                             accept="image/*"
@@ -1607,9 +1682,10 @@ Mohon informasi langkah pengerjaan selanjutnya. Terima kasih!`;
                           <img src={p.image} className="w-full h-full object-contain" alt="Current catalog" referrerPolicy="no-referrer" />
                         </div>
                         <div className="flex flex-col space-y-1 flex-1 select-none">
-                          <label className="text-[9px] font-bold uppercase text-[#0ea5e9] tracking-wider cursor-pointer bg-slate-50 border border-slate-250 py-1 px-2 rounded hover:bg-slate-100 text-center block">Upload Foto Baru</label>
+                          <label htmlFor={`catalog-image-upload-${p.id}`} className="text-[9px] font-bold uppercase text-[#0ea5e9] tracking-wider cursor-pointer bg-slate-50 border border-slate-250 py-1 px-2 rounded hover:bg-slate-100 text-center block">Upload Foto Baru</label>
                           <input
                             type="file"
+                            id={`catalog-image-upload-${p.id}`}
                             accept="image/*"
                             onChange={(e) => handleImageUpload(e, (base64) => {
                               const newCatalog = [...catalogProducts];
