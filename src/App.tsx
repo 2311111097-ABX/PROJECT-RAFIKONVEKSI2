@@ -94,7 +94,7 @@ const DEFAULT_BRAND_SETTINGS: BrandSettings = {
   heroImage: '/src/assets/images/hero_clothing_rack_1780410100838.png',
   logoImage: '',
   aboutTitle: 'RAFI KONVEKSI',
-  aboutText1: 'Rafikonveksi berdiri di atas pilar presisi dan dedikasi. Kami percaya bahwa setiap pakaian adalah representasi dari karakter dan profesionalisme penggunanya.',
+  aboutText1: 'Rafikonveksi didirikan pada tahun 2006 dan berdiri di atas pilar presisi serta dedikasi. Kami percaya bahwa setiap pakaian adalah representasi dari karakter dan profesionalisme penggunanya.',
   aboutText2: 'Dengan menggunakan material terbaik dan teknik penjahitan modern, kami memastikan setiap produk yang keluar dari workshop kami memenuhi standar kualitas tinggi yang berkelanjutan.',
   adminPasswordHash: 'admin123',
   whatsappNumber: '6281234567890'
@@ -212,13 +212,32 @@ export default function App() {
   const [adminPasswordInput, setAdminPasswordInput] = useState('');
   const [adminError, setAdminError] = useState('');
   const [activeAdminTab, setActiveAdminTab] = useState<'general' | 'catalog' | 'inquiries' | 'password'>('general');
+  const [unauthorizedDomain, setUnauthorizedDomain] = useState<string | null>(null);
 
   // Firebase Auth Observer & Real-time Auto login for administrative email
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setCurrentUser(user);
       if (user && user.email === '2311111097@ittelkom-pwt.ac.id' && user.emailVerified) {
         setIsAdminLoggedIn(true);
+        // Sync local storage improvements to Firestore cloud on login so they are published instantly!
+        try {
+          const cachedLocalBrand = localStorage.getItem('rafi_konveksi_brand');
+          const cachedLocalCatalog = localStorage.getItem('rafi_konveksi_catalog');
+          
+          if (cachedLocalBrand) {
+            const parsed = JSON.parse(cachedLocalBrand);
+            await setDoc(doc(db, 'settings', 'brand'), parsed, { merge: true });
+          }
+          if (cachedLocalCatalog) {
+            const parsedList = JSON.parse(cachedLocalCatalog) as CatalogProduct[];
+            for (const item of parsedList) {
+              await setDoc(doc(db, 'catalog', item.id), item, { merge: true });
+            }
+          }
+        } catch (syncErr) {
+          console.error("Auto sync local settings to cloud on login failed:", syncErr);
+        }
       }
     }, (error) => {
       console.error("Auth state changed error:", error);
@@ -734,7 +753,7 @@ Mohon informasi langkah pengerjaan selanjutnya. Terima kasih!`;
             
             <div className="inline-block">
               <span className="text-[10px] md:text-xs tracking-[0.25em] font-extrabold text-[#0EA5E9] uppercase bg-sky-50 px-3.5 py-1.5 rounded-full border border-sky-100">
-                ESTABLISHED 2024
+                ESTABLISHED 2006
               </span>
             </div>
 
@@ -889,6 +908,9 @@ Mohon informasi langkah pengerjaan selanjutnya. Terima kasih!`;
                 {brandSettings.aboutText2}
               </p>
               <div className="pt-4 flex flex-wrap gap-3">
+                <span className="bg-sky-50/80 hover:bg-sky-100 text-sky-700 text-xs font-bold px-4 py-2 rounded-lg transition-all border border-sky-200 flex items-center gap-1">
+                  📅 Sejak 2006
+                </span>
                 <span className="bg-slate-100 hover:bg-sky-50 text-slate-700 hover:text-[#0ea5e9] text-xs font-bold px-4 py-2 rounded-lg transition-all border border-slate-200">
                   ⚡ Berpengalaman
                 </span>
@@ -1152,7 +1174,7 @@ Mohon informasi langkah pengerjaan selanjutnya. Terima kasih!`;
               <div className="space-y-4 pt-2">
                 <div className="flex items-center space-x-3 text-sm justify-center md:justify-start">
                   <MapPin className="w-5 h-5 text-emerald-400 shrink-0" />
-                  <span className="font-semibold text-sky-50">Jl. Industri Kreatif No. 12, Bandung, Jawa Barat</span>
+                  <span className="font-semibold text-sky-50">Jalan Raya, Dusun II, Karangnangka, Kedungbanteng, Banyumas</span>
                 </div>
                 <div className="flex items-center space-x-3 text-sm justify-center md:justify-start">
                   <Mail className="w-5 h-5 text-emerald-400 shrink-0" />
@@ -1504,7 +1526,14 @@ Mohon informasi langkah pengerjaan selanjutnya. Terima kasih!`;
                     }
                   } catch (e: any) {
                     console.error('Failed to login with Google:', e);
-                    setAdminError('Gagal login via Google: ' + (e.message || 'unknown error'));
+                    const errMsg = e.message || '';
+                    const errCode = e.code || '';
+                    if (errCode === 'auth/unauthorized-domain' || errMsg.includes('auth/unauthorized-domain')) {
+                      setUnauthorizedDomain(window.location.hostname);
+                      setAdminError('Domain belum diizinkan oleh Firebase Console. Lihat petunjuk di bawah untuk mengizinkan domain: ' + window.location.hostname);
+                    } else {
+                      setAdminError('Gagal login via Google: ' + (e.message || 'unknown error'));
+                    }
                   }
                 }}
                 className="w-full bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold uppercase tracking-wider py-3.5 rounded-xl transition-all shadow-sm flex items-center justify-center space-x-2"
@@ -1517,6 +1546,36 @@ Mohon informasi langkah pengerjaan selanjutnya. Terima kasih!`;
                 </svg>
                 <span>Masuk dengan Google (Admin)</span>
               </button>
+
+              {unauthorizedDomain && (
+                <div className="bg-rose-50 border border-rose-200 rounded-2xl p-3 text-left space-y-2 mt-2">
+                  <p className="text-[10px] font-black uppercase text-rose-800 tracking-wider flex items-center space-x-1">
+                    <span>🛑 IZINKAN DOMAIN DI FIREBASE:</span>
+                  </p>
+                  <p className="text-[9.5px] text-rose-700 font-semibold leading-relaxed">
+                    Firebase menolak login dari "{unauthorizedDomain}" karena domain ini belum didaftarkan di Authorized Domains.
+                  </p>
+                  <div className="text-[10px] text-slate-750 bg-white p-2.5 rounded-xl border border-rose-150 space-y-1.5 leading-normal text-slate-700">
+                    <div>1. Buka <a href="https://console.firebase.google.com/" target="_blank" rel="noreferrer" className="text-[#0ea5e9] underline font-bold">Firebase Console</a></div>
+                    <div>2. Pilih proyek Anda: <code className="bg-slate-100 text-stone-800 px-1 py-0.5 rounded text-[9.5px] font-mono">gen-lang-client-0184249605</code></div>
+                    <div>3. Buka menu <strong>Authentication</strong> &gt; Tab <strong>Settings</strong> &gt; klik <strong>Authorized Domains</strong> di sebelah kiri.</div>
+                    <div>4. Klik <strong>Add Domain</strong> dan tambahkan domain di bawah ini:</div>
+                    <div className="flex items-center justify-between bg-emerald-50 text-emerald-800 rounded-lg p-2 mt-1 font-mono text-[9.5px] border border-emerald-150">
+                      <span className="truncate select-all">{unauthorizedDomain}</span>
+                      <button 
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(unauthorizedDomain);
+                          alert('Domain berhasil disalin: ' + unauthorizedDomain);
+                        }}
+                        className="bg-white hover:bg-emerald-100 text-emerald-800 px-2 py-1 rounded-md text-[9px] font-sans font-black border border-emerald-200 transition-all shrink-0"
+                      >
+                        SALIN
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
             <div className="text-center pt-2">
               <span className="text-[10px] text-slate-400 font-mono">Password Bawaan: <span className="font-bold underline">admin123</span></span>
@@ -1619,6 +1678,23 @@ Mohon informasi langkah pengerjaan selanjutnya. Terima kasih!`;
                 🔑 Ganti Password
               </button>
             </div>
+
+            {/* Warning Banner if they are only logged in via password, explaining that changes are local-only and how to fix */}
+            {(!currentUser || currentUser.email !== '2311111097@ittelkom-pwt.ac.id' || !currentUser.emailVerified) && (
+              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 text-left animate-pulse">
+                <div className="space-y-1">
+                  <div className="flex items-center space-x-1.5 text-amber-800 font-bold text-xs uppercase tracking-wide">
+                    <span>⚠️ MODE LOKAL / OFFLINE DETEKSI</span>
+                  </div>
+                  <p className="text-xs text-amber-700 leading-relaxed font-semibold">
+                    Anda masuk menggunakan Kata Sandi. Gambar & data baru yang Anda unggah <span className="underline">hanya tersimpan di perangkat ini</span> dan tidak akan terbit di Vercel (Web Publik).
+                  </p>
+                  <p className="text-[10.5px] text-amber-600 leading-normal">
+                    Agar foto & katalog otomatis terunggah ke database online (Firebase Cloud) dan tampil di Vercel, silakan ketuk tombol <strong>Logout</strong> di atas, lalu masuk menggunakan tombol Google berwarna putih: <strong>"Masuk dengan Google (Admin)"</strong> menggunakan email <strong>2311111097@ittelkom-pwt.ac.id</strong>. Setelah login, semua perubahan lokal terbaru Anda akan otomatis disalin ke database cloud secara instan!
+                  </p>
+                </div>
+              </div>
+            )}
 
             {/* TAB CONTENT: GENERAL */}
             {activeAdminTab === 'general' && (
