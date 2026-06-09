@@ -51,7 +51,8 @@ import {
   Unlock,
   Settings,
   Image,
-  Upload
+  Upload,
+  Instagram
 } from 'lucide-react';
 
 interface Inquiry {
@@ -1177,6 +1178,12 @@ Mohon informasi langkah pengerjaan selanjutnya. Terima kasih!`;
                   <span className="font-semibold text-sky-50">Jalan Raya, Dusun II, Karangnangka, Kedungbanteng, Banyumas</span>
                 </div>
                 <div className="flex items-center space-x-3 text-sm justify-center md:justify-start">
+                  <Instagram className="w-5 h-5 text-emerald-400 shrink-0" />
+                  <a href="https://www.instagram.com/enggarkonveksi_pwt?igsh=MXh5a2MwcGNkaWwyMQ==" target="_blank" rel="noreferrer" className="font-semibold text-sky-100 hover:text-white transition-all underline decoration-sky-300">
+                    @enggarkonveksi_pwt
+                  </a>
+                </div>
+                <div className="flex items-center space-x-3 text-sm justify-center md:justify-start">
                   <Mail className="w-5 h-5 text-emerald-400 shrink-0" />
                   <a href="mailto:hello@rafikonveksi.com" className="font-semibold text-sky-100 hover:text-white transition-all underline decoration-sky-300">
                     hello@rafikonveksi.com
@@ -1279,7 +1286,7 @@ Mohon informasi langkah pengerjaan selanjutnya. Terima kasih!`;
 
           {/* Socials quicklinks matching image */}
           <div className="flex flex-wrap justify-center gap-x-6 gap-y-2 font-semibold">
-            <a href="https://instagram.com" target="_blank" rel="no-referrer" className="hover:text-[#0ea5e9]">Instagram</a>
+            <a href="https://www.instagram.com/enggarkonveksi_pwt?igsh=MXh5a2MwcGNkaWwyMQ==" target="_blank" rel="noreferrer" className="hover:text-[#0ea5e9]">Instagram</a>
             <a href={`https://wa.me/${(brandSettings.whatsappNumber || '6281234567890').replace(/\D/g, '')}`} target="_blank" rel="no-referrer" className="hover:text-[#0ea5e9]">WhatsApp</a>
             <a href="#about" className="hover:text-[#0ea5e9]">Privacy Policy</a>
             <a href="#home" className="hover:text-[#0ea5e9]">Terms of Service</a>
